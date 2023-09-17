@@ -26,9 +26,44 @@ E.g.: If you want to trigger only on a specify control event type `control_chang
 > only use with 'Track' trigger type
 
 """
+import requests
+import bpy
+import sys
+import os
 
 def get_midi_simulation_node():
+    """
+    Create input and output for simulation zone
+    uses:
+    - GeometryNodeSimulationInput
+    - 
+    """
     pass
 
 def create_midi_simulation_node():
-    pass
+    
+    node_group = bpy.data.node_groups.new(name="MidiSimulationNode", type="GeometryNodeTree")
+    node_group.inputs.new(type = "NodeSocketGeometry", name = "GeometryIn")
+
+    group_input = node_group.nodes.new(type="NodeGroupInput")
+    
+if __name__ == "__main__":
+    
+    # Check if running in blender or from vs code
+    prefix = "/".join(bpy.app.binary_path.split("/")[:-1]) if bpy.app.binary_path else "//////"
+    if sys.executable.startswith(prefix):
+        # In blender:
+        import bpy
+        from mathutils import Euler
+
+        for area in bpy.context.screen.areas:
+            if area.type == 'VIEW_3D':
+                area.spaces.active.region_3d.view_rotation.rotate(Euler((0, 0, 0.9)))
+    else:
+        # Not in plender
+        script_name = "/home/tim/Data/local/development/tims-blender-tools/create_midi_geometry_node.py"
+        requests.post("http://localhost:5000/tasks/", json={
+            "task": {
+                "script_path": script_name,
+                "type": "run_script"
+            }})

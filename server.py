@@ -8,11 +8,10 @@ import os
 import flask
 
 app = Flask(__name__)
+from flask import g
 
-DB = {
-    "tasks": []
-}
 
+TASKS = []
 def init_app():
     print("Blender server started")
 
@@ -26,13 +25,14 @@ def index():
 
 @app.route("/tasks/", methods=['GET', 'POST'])
 def tasks():
+    global TASKS
     if flask.request.method == 'POST':
         new_task = flask.request.json["task"]
-        DB["tasks"].append(new_task)
+        TASKS.append(new_task)
     else:
-        return flask.jsonify(DB["tasks"])
-    return "Index Page"
-
+        cur_tasks = flask.jsonify(TASKS)
+        del TASKS[:]
+        return cur_tasks
 
 if __name__ == '__main__':
     Thread(target=start_server).start()

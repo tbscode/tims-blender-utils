@@ -57,6 +57,8 @@ def create_key(
     return cube
 
 def process_midi_file():
+    from mido import MidiFile
+    import mido
 
     mid = MidiFile('/home/tim/Data/local/development/tims-blender-tools/for_elise_by_beethoven.mid')
     tempo_event = [msg.tempo for msg in mid.tracks[0] if msg.type == 'set_tempo']
@@ -90,6 +92,7 @@ def generate_midi_node(mid, midi_info):
     geometry_nodes.inputs[0].attribute_domain = 'POINT'
     
     group_input = geometry_nodes.nodes.new("NodeGroupInput")
+    group_output = geometry_nodes.nodes.new("NodeGroupOutput")
     # Now we also need a simple scene time note to output the scene time dependant midi value
     scene_time = geometry_nodes.nodes.new("GeometryNodeInputSceneTime")
     
@@ -97,14 +100,23 @@ def generate_midi_node(mid, midi_info):
     math.operation = 'DIVIDE'
     math.inputs[2].default_value = 0.5
     
-    
+    # Link the scene time and the total time to the math node
+    geometry_nodes.links.new(
+        scene_time.outputs[0],
+        math.inputs[0]
+    )
+    geometry_nodes.links.new(
+        group_input.outputs[0],
+        math.inputs[1]
+    )
 
     # Now In oder to determine which outputs wee need we need to first analyze the midi file
     # For that we basicly need to consider all 'note_on' and 'note_off' events
     TOTAL_TICKS = float(midi_info["ticks"])
-    TRACK = 0
+    TRACK = 1
     points_by_note = {}
     for event in mid.tracks[TRACK]:
+        print("EV", event)
         if event.type in ["note_on", "note_off"]:
             
             if event.note not in points_by_note:
@@ -113,9 +125,34 @@ def generate_midi_node(mid, midi_info):
                 "time": float(event.time) / TOTAL_TICKS,
                 "velocity": float(event.velocity) / 128.0,
             })
-    notes_used = list(points_by_note.keys())
+            
+    #print("TBS", "\n", points_by_note, mid.tracks[0])
     
     # Now for every note we create a float curve and an output
+    for note in points_by_note:
+        # First create the float curve
+        float_curve = geometry_nodes.nodes.new(type="ShaderNodeFloatCurve")
+        for point in points_by_note[note]:
+            float_curve.mapping.curves[0].points.new(point["time"], point["velocity"])
+            float_curve.mapping.curves[0].points[-1].handle_type = 'VECTOR'
+        float_curve.mapping.update()
+        
+        # Then create the output node
+        output_name = f"NOTE_{note}"
+        geometry_nodes.outputs.new('NodeSocketFloat', output_name)
+        geometry_nodes.outputs[-1].attribute_domain = 'POINT'
+        
+        # Then link the nodes match note to float curve input
+        geometry_nodes.links.new(
+            math.outputs[0],
+            float_curve.inputs[0]
+        )
+        
+        # And the float curve output to the newly created output socket
+        geometry_nodes.links.new(
+            float_curve.outputs[0],
+            group_output.inputs[-1],
+        )
 
 
     

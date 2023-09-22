@@ -2,6 +2,8 @@ import requests
 import bpy
 import sys
 import os
+from mido import MidiFile
+import mido
 
             
 def slightly_rotate_camera():
@@ -53,6 +55,69 @@ def create_key(
     text_object.location[0] = -0.5
     
     return cube
+
+def process_midi_file():
+
+    mid = MidiFile('/home/tim/Data/local/development/tims-blender-tools/for_elise_by_beethoven.mid')
+    tempo_event = [msg.tempo for msg in mid.tracks[0] if msg.type == 'set_tempo']
+
+    if tempo_event:
+        tempo = tempo_event[0]
+    else:
+        tempo = 500000  # Default value if not in the MIDI
+
+    BPM = mido.tempo2bpm(tempo)
+
+    total_ticks = sum(sum(msg.time for msg in track) for track in mid.tracks)
+
+    length_in_seconds = mido.tick2second(total_ticks , mid.ticks_per_beat, tempo)
+
+    print("Tempo: {} BPM".format(BPM))
+    print("Length: {} seconds".format(length_in_seconds))
+    
+    return mid, {
+        "tempo": BPM,
+        "length": length_in_seconds,
+        "ticks": total_ticks,
+    }
+
+def generate_midi_node(mid, midi_info):
+    
+    # Create the simple node group
+    geometry_nodes = bpy.data.node_groups.new(type='GeometryNodeTree',name="MidiNodeHandler")
+    geometry_nodes.inputs.new('NodeSocketFloat', "Total Time")
+    geometry_nodes.inputs[0].default_value = 0.0 # TODO: calculate the total time from the midi file and put it here
+    geometry_nodes.inputs[0].attribute_domain = 'POINT'
+    
+    group_input = geometry_nodes.nodes.new("NodeGroupInput")
+    # Now we also need a simple scene time note to output the scene time dependant midi value
+    scene_time = geometry_nodes.nodes.new("GeometryNodeInputSceneTime")
+    
+    math = geometry_nodes.nodes.new("ShaderNodeMath")
+    math.operation = 'DIVIDE'
+    math.inputs[2].default_value = 0.5
+    
+    
+
+    # Now In oder to determine which outputs wee need we need to first analyze the midi file
+    # For that we basicly need to consider all 'note_on' and 'note_off' events
+    TOTAL_TICKS = float(midi_info["ticks"])
+    TRACK = 0
+    points_by_note = {}
+    for event in mid.tracks[TRACK]:
+        if event.type in ["note_on", "note_off"]:
+            
+            if event.note not in points_by_note:
+                points_by_note[event.note] = []
+            points_by_note[event.note].append({
+                "time": float(event.time) / TOTAL_TICKS,
+                "velocity": float(event.velocity) / 128.0,
+            })
+    notes_used = list(points_by_note.keys())
+    
+    # Now for every note we create a float curve and an output
+
+
     
 
 if __name__ == "__main__":
@@ -70,6 +135,9 @@ if __name__ == "__main__":
         for i in range(0, 100):
             keys.append(create_key(id=i))
             slightly_rotate_camera()
+            
+        mid, midi_info = process_midi_file()
+        generate_midi_node(mid, midi_info)
     else:
         # Not in plender
         script_name = "/home/tim/Data/local/development/tims-blender-tools/generate_keyboard_keys.py"

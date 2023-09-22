@@ -8,7 +8,10 @@ def execute_task(task):
     print("Executing task: ", task)
     if task["type"] == "run_script":
         filename = task["script_path"]
-        exec(compile(open(filename).read(), filename, 'exec'))
+        try:
+            exec(compile(open(filename).read(), filename, 'exec'))
+        except Exception as e:
+            print("Error while executing script: ", e)
 
     
 class ModalOperator(bpy.types.Operator):

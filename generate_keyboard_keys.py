@@ -26,6 +26,7 @@ def create_key(
         padding=0.1,
     ):
 
+    # 1. First we create the keyboard key
     bpy.ops.mesh.primitive_cube_add(size=1, enter_editmode=False, align='WORLD', location=(0, 0, 0))
     cube = bpy.context.object
     cube.scale = (2, 1, 0.4)
@@ -34,6 +35,22 @@ def create_key(
     
     if id != 0:
         cube.location[1] = width * id + padding * id
+        
+    # 2. Then we create the ID help annotation
+    text_data = f"Key: {id}"
+    text_object = bpy.data.objects.new("Text", bpy.data.curves.new(name="Text", type="FONT"))
+    bpy.context.collection.objects.link(text_object)
+    text_object.select_set(True)
+    bpy.context.view_layer.objects.active = text_object
+    bpy.ops.object.mode_set(mode='EDIT')
+    bpy.ops.font.delete()
+    bpy.ops.font.text_insert(text=text_data)
+    bpy.ops.object.editmode_toggle()
+    text_object.name = f"KEY_{id}_ID"
+
+    if id != 0:
+        text_object.location[1] = width * id + padding * id
+    text_object.location[0] = -0.5
     
     return cube
     
@@ -48,10 +65,11 @@ if __name__ == "__main__":
         clear_prev(scene)
         slightly_rotate_camera()
         #create_key(id=0)
-        key1 = create_key(id=0)
-        slightly_rotate_camera()
-        key2 = create_key(id=1)
-        slightly_rotate_camera()
+        
+        keys = []
+        for i in range(0, 100):
+            keys.append(create_key(id=i))
+            slightly_rotate_camera()
     else:
         # Not in plender
         script_name = "/home/tim/Data/local/development/tims-blender-tools/generate_keyboard_keys.py"

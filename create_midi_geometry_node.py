@@ -31,21 +31,30 @@ import bpy
 import sys
 import os
 
-def get_midi_simulation_node():
+def get_midi_simulation_node(
+    midi_path,
+    midi_duration=None, # None try to determine
+):
     """
-    Create input and output for simulation zone
-    uses:
-    - GeometryNodeSimulationInput
-    - 
+    Works like:
+    - input time_passed
     """
     pass
 
 def create_midi_simulation_node():
     
     node_group = bpy.data.node_groups.new(name="MidiSimulationNode", type="GeometryNodeTree")
-    node_group.inputs.new(type = "NodeSocketGeometry", name = "GeometryIn")
+    #node_group.inputs.new(type = "NodeSocketGeometry", name = "GeometryIn")
+    #group_input = node_group.nodes.new(type="NodeGroupInput")
+    
+    
+def slightly_rotate_camera():
+    import bpy
+    from mathutils import Euler
 
-    group_input = node_group.nodes.new(type="NodeGroupInput")
+    for area in bpy.context.screen.areas:
+        if area.type == 'VIEW_3D':
+            area.spaces.active.region_3d.view_rotation.rotate(Euler((0, 0, 0.3)))
     
 if __name__ == "__main__":
     
@@ -53,12 +62,9 @@ if __name__ == "__main__":
     prefix = "/".join(bpy.app.binary_path.split("/")[:-1]) if bpy.app.binary_path else "//////"
     if sys.executable.startswith(prefix):
         # In blender:
-        import bpy
-        from mathutils import Euler
+        slightly_rotate_camera()
+        create_midi_simulation_node()
 
-        for area in bpy.context.screen.areas:
-            if area.type == 'VIEW_3D':
-                area.spaces.active.region_3d.view_rotation.rotate(Euler((0, 0, 0.9)))
     else:
         # Not in plender
         script_name = "/home/tim/Data/local/development/tims-blender-tools/create_midi_geometry_node.py"

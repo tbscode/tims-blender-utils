@@ -5,6 +5,38 @@ I can't blender yet, so I'll just script I bet.
 
 Random tools from a guy that tries to learn blender through scripting only.
 
+### Script usage:
+
+Have the server running in the background
+
+```
+python3 server.py
+```
+
+Load `blender_update_operator.py` into your blender project and run it.
+
+Now by using the following entry check the script when run is either automaticly relayed to the task server OR it is run from within blender.
+
+```python
+if __name__ == "__main__":
+    
+    # Check if running in blender or from vs code
+    prefix = "/".join(bpy.app.binary_path.split("/")[:-1]) if bpy.app.binary_path else "//////"
+    if sys.executable.startswith(prefix):
+        pass
+    else:
+        # Not in plender
+        script_name = "<path to your script>"
+        requests.post("http://localhost:5000/tasks/", json={
+            "task": {
+                "script_path": script_name,
+                "type": "run_script"
+            }})
+
+```
+
+> e.g.: simply run the script in vscode by pressing the run-in-terminal button in the upper right corner
+
 ### Blender Communicator
 
 A simple bridge to relay any tasks to a running blender instance.

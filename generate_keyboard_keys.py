@@ -18,6 +18,8 @@ def clear_prev(scene):
     for obj in scene.objects:
         if obj.name.startswith("KEY_"):
             obj.select_set(True)
+            bpy.context.view_layer.objects.active = obj
+            bpy.ops.object.mode_set(mode='OBJECT')
             bpy.ops.object.delete() 
         else:
             obj.select_set(False)
@@ -38,6 +40,14 @@ def create_key(
     if id != 0:
         cube.location[1] = width * id + padding * id
         
+    # Make sure the object is selected and is the active object
+    cube.select_set(True)
+    bpy.context.view_layer.objects.active = cube
+
+    # Apply transformations
+    bpy.ops.object.mode_set(mode='OBJECT')
+    bpy.ops.object.transform_apply(location=True, rotation=True, scale=True)
+        
     # 2. Then we create the ID help annotation
     text_data = f"Key: {id}"
     text_object = bpy.data.objects.new("Text", bpy.data.curves.new(name="Text", type="FONT"))
@@ -53,6 +63,7 @@ def create_key(
     if id != 0:
         text_object.location[1] = width * id + padding * id
     text_object.location[0] = -0.5
+    
     
     return cube
 
@@ -85,10 +96,16 @@ def process_midi_file():
 
 def generate_midi_node(mid, midi_info):
     
+    # Delete previous versions of the nodegoup
+    for ng in bpy.data.node_groups:
+        if ng.name.startswith("MidiNodeHandler"):
+            bpy.data.node_groups.remove(ng)
+    
     # Create the simple node group
     geometry_nodes = bpy.data.node_groups.new(type='GeometryNodeTree',name="MidiNodeHandler")
-    geometry_nodes.inputs.new('NodeSocketFloat', "Total Time")
-    geometry_nodes.inputs[0].default_value = 0.0 # TODO: calculate the total time from the midi file and put it here
+    geometry_nodes.inputs.new('NodeSocketFloat', "Total Frames")
+
+    geometry_nodes.inputs[0].default_value = float(midi_info["ticks"])
     geometry_nodes.inputs[0].attribute_domain = 'POINT'
     
     group_input = geometry_nodes.nodes.new("NodeGroupInput")
@@ -102,7 +119,7 @@ def generate_midi_node(mid, midi_info):
     
     # Link the scene time and the total time to the math node
     geometry_nodes.links.new(
-        scene_time.outputs[0],
+        scene_time.outputs[1],
         math.inputs[0]
     )
     geometry_nodes.links.new(
@@ -115,14 +132,17 @@ def generate_midi_node(mid, midi_info):
     TOTAL_TICKS = float(midi_info["ticks"])
     TRACK = 1
     points_by_note = {}
+    time = 0
     for event in mid.tracks[TRACK]:
         print("EV", event)
         if event.type in ["note_on", "note_off"]:
             
+            time += event.time
+            
             if event.note not in points_by_note:
                 points_by_note[event.note] = []
             points_by_note[event.note].append({
-                "time": float(event.time) / TOTAL_TICKS,
+                "time": float(time) / TOTAL_TICKS,
                 "velocity": float(event.velocity) / 128.0,
             })
             
@@ -134,7 +154,9 @@ def generate_midi_node(mid, midi_info):
         float_curve = geometry_nodes.nodes.new(type="ShaderNodeFloatCurve")
         for point in points_by_note[note]:
             float_curve.mapping.curves[0].points.new(point["time"], point["velocity"])
-            float_curve.mapping.curves[0].points[-1].handle_type = 'VECTOR'
+            
+        for point in float_curve.mapping.curves[0].points:
+            point.handle_type = 'VECTOR'
         float_curve.mapping.update()
         
         # Then create the output node
@@ -145,15 +167,83 @@ def generate_midi_node(mid, midi_info):
         # Then link the nodes match note to float curve input
         geometry_nodes.links.new(
             math.outputs[0],
-            float_curve.inputs[0]
+            float_curve.inputs[1]
         )
         
         # And the float curve output to the newly created output socket
         geometry_nodes.links.new(
             float_curve.outputs[0],
-            group_output.inputs[-1],
+            group_output.inputs[output_name]
         )
+        
+    return {
+        "notes": list(points_by_note.keys())
+    }
 
+def attach_geonode_modifier_to_key(key, id):
+    geo_nodes_modifier = key.modifiers.new(name=f"key_{id}_geonode", type='NODES')
+    
+    
+    geo_nodes = bpy.data.node_groups.new(type='GeometryNodeTree',name="KEY_MODIFIER_{}".format(id))
+
+    g_input = geo_nodes.inputs.new(type="NodeSocketGeometry",name="Geometry")
+    g_output = geo_nodes.outputs.new(type="NodeSocketGeometry",name="Geometry")
+    
+    group_input = geo_nodes.nodes.new("NodeGroupInput")
+    group_output = geo_nodes.nodes.new("NodeGroupOutput")
+    
+    midi_group_node = geo_nodes.nodes.new('GeometryNodeGroup')
+    midi_group_node.node_tree = bpy.data.node_groups["MidiNodeHandler"]
+    
+    # The object position
+    position = geo_nodes.nodes.new("GeometryNodeInputPosition")
+    
+    # get only Y and Z
+    seperate_xyz = geo_nodes.nodes.new("ShaderNodeSeparateXYZ")
+
+    # combine Y and Z with the X from the midi_group_node
+    combine_xyz = geo_nodes.nodes.new("ShaderNodeCombineXYZ")
+    
+    geo_nodes.links.new(
+        midi_group_node.outputs[f"NOTE_{id}"],
+        combine_xyz.inputs[0]
+    )
+    
+    geo_nodes.links.new(
+        position.outputs[0],
+        seperate_xyz.inputs[0]
+    )
+    
+    geo_nodes.links.new(
+        seperate_xyz.outputs[1],
+        combine_xyz.inputs[1]
+    )
+    
+    geo_nodes.links.new(
+        seperate_xyz.outputs[2],
+        combine_xyz.inputs[2]
+    )
+    
+    set_pos_node = geo_nodes.nodes.new("GeometryNodeSetPosition")
+    
+    geo_nodes.links.new(
+        group_input.outputs[0], 
+        set_pos_node.inputs[0]
+    )
+
+    geo_nodes.links.new(
+        combine_xyz.outputs[0],
+        set_pos_node.inputs[2]
+    )
+    
+    geo_nodes.links.new(
+        set_pos_node.outputs[0],
+        group_output.inputs[0]
+    )
+    
+    # set the nodegroup modifier
+    geo_nodes_modifier.node_group = geo_nodes
+    
 
     
 
@@ -174,7 +264,21 @@ if __name__ == "__main__":
             slightly_rotate_camera()
             
         mid, midi_info = process_midi_file()
-        generate_midi_node(mid, midi_info)
+        midi_node_info = generate_midi_node(mid, midi_info)
+        
+        bpy.context.scene.frame_end = int(60.0 * float(midi_info["length"]))
+        
+        
+        for ng in bpy.data.node_groups:
+            if ng.name.startswith("KEY_MODIFIER_"):
+                bpy.data.node_groups.remove(ng)
+        
+        # Now we can add a modifier to all the keys
+        for i, key in enumerate(keys):
+            if i in midi_node_info["notes"]:
+                attach_geonode_modifier_to_key(key, i)
+
+        #attach_geonode_modifier_to_key(keys[84], 84)
     else:
         # Not in plender
         script_name = "/home/tim/Data/local/development/tims-blender-tools/generate_keyboard_keys.py"
